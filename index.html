@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phosphor · Vectrex emulator</title>
+  <meta name="description" content="A Vectrex emulator in plain JavaScript: Motorola 6809, VIA 6522, analog vector hardware, AY-3-8912 sound, rendered with a WebGL phosphor glow.">
+  <meta name="theme-color" content="#05070b">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2305070b'/%3E%3Cpath d='M7 24 16 7l9 17z' fill='none' stroke='%239fd4ff' stroke-width='2.2' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M5 26 16 5l11 21z"/><path d="M11 20h10"/></svg>
+      <div>
+        <h1>Phosphor</h1>
+        <p class="tagline">A Vectrex emulator in plain JavaScript</p>
+      </div>
+    </div>
+    <a class="repo" href="https://github.com/jimmykurc/vectrex-phosphor" rel="noopener">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      Source
+    </a>
+  </header>
+
+  <main class="layout">
+    <section class="stage" aria-label="Emulator screen">
+      <div class="cabinet" id="cabinet">
+        <div class="tube">
+          <canvas id="screen" width="660" height="820" aria-label="Vectrex display"></canvas>
+          <div class="glass" aria-hidden="true"></div>
+        </div>
+      </div>
+      <div class="statusbar">
+        <span class="led" id="led"></span>
+        <span id="status">Starting…</span>
+        <span class="spacer"></span>
+        <span id="fps" class="mono">-- fps</span>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <div class="group">
+        <h2>Media</h2>
+        <div class="buttons">
+          <button id="btn-bios" class="primary" title="Load an 8 KB Vectrex system ROM">Load BIOS</button>
+          <button id="btn-cart" class="primary" title="Load a cartridge image (.bin / .vec)">Load cartridge</button>
+          <button id="btn-demo" title="Run the built-in demo">Demo</button>
+          <button id="btn-reset" title="Reset the machine">Reset</button>
+        </div>
+        <p class="hint">…or drop a file anywhere on the page. Nothing is uploaded: files stay in your browser.</p>
+        <input type="file" id="file-bios" accept=".bin,.rom,.dat,application/octet-stream" hidden>
+        <input type="file" id="file-cart" accept=".bin,.vec,.gam,.rom,application/octet-stream" hidden>
+      </div>
+
+      <div class="group">
+        <h2>Display &amp; sound</h2>
+        <div class="buttons">
+          <button id="btn-sound" aria-pressed="false">Sound: off</button>
+          <button id="btn-full">Fullscreen</button>
+        </div>
+        <label class="slider">Persistence <input id="persist" type="range" min="0" max="0.8" step="0.02" value="0.3"></label>
+        <label class="slider">Glow <input id="glow" type="range" min="0" max="2" step="0.05" value="1"></label>
+      </div>
+
+      <div class="group">
+        <h2>Controls</h2>
+        <table class="keys">
+          <tr><td><kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd></td><td>Joystick</td></tr>
+          <tr><td><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd></td><td>Buttons 1 – 4</td></tr>
+          <tr><td>Gamepad</td><td>Analog stick + face buttons<span id="pads"></span></td></tr>
+        </table>
+        <p class="hint" id="demo-help">Demo: <kbd>A</kbd> reverses the spin, hold <kbd>S</kbd> to spin faster, <kbd>D</kbd> toggles the music.</p>
+      </div>
+
+      <div class="group about">
+        <h2>Under the hood</h2>
+        <p>A cycle-counted <strong>Motorola 6809</strong>, a <strong>VIA 6522</strong> and the analog vector board — DAC, sample-and-hold mux, integrators, ZERO, BLANK and RAMP — modelled cycle by cycle. The beam is drawn into a WebGL phosphor buffer with persistence and bloom; the <strong>AY-3-8912</strong> plays through an AudioWorklet.</p>
+        <p>The demo is an original 6809 program assembled by a small assembler in this repo, so it runs without any BIOS. No ROMs are included.</p>
+      </div>
+    </aside>
+  </main>
+
+  <div class="drop" id="drop" aria-hidden="true"><div>Drop a BIOS or cartridge image<small>detected automatically</small></div></div>
+
+  <footer class="foot">MIT licensed · by Jimmy Kurc · Vectrex is a trademark of its respective owner; this project is not affiliated with it.</footer>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

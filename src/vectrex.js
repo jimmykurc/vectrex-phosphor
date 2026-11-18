@@ -49,6 +49,7 @@ export class Vectrex {
       onWrite: (reg) => this.viaWritten(reg),
     });
     this.cpu = new CPU6809(this);
+    this.frameSync = false;
   }
 
   // ------------------------------------------------------------ loading
@@ -92,6 +93,7 @@ export class Vectrex {
 
   // ----------------------------------------------------- analog / sound
   viaWritten(reg) {
+    if (reg === 0x09) this.frameSync = true; // T2 re-armed: the BIOS frame timer
     if (reg > 3 && reg !== 0x0f) return;
     const via = this.via;
     const orb = via.orb;
@@ -116,11 +118,14 @@ export class Vectrex {
 
   // ------------------------------------------------------------ running
   /** Run for (at least) the given number of CPU cycles. */
-  run(cycles) {
+  run(cycles) { return this.execute(cycles, false); }
+
+  execute(cycles, stopOnSync) {
     const cpu = this.cpu, via = this.via, vec = this.vector;
     const target = cpu.cycles + cycles;
     let now = cpu.cycles;
     while (now < target) {
+      if (stopOnSync && this.frameSync) break;
       cpu.irq = via.irq;
       const n = cpu.step();
       for (let i = 0; i < n; i++) {
@@ -133,6 +138,17 @@ export class Vectrex {
     vec.cut(now);
     this.psg.advanceTo(now);
     return now;
+  }
+
+  /**
+   * Run one display frame: until the program re-arms VIA timer 2 (which is
+   * how the BIOS and most programs pace their 50 Hz refresh), or until
+   * `maxCycles` if it never does. Returns the number of cycles executed.
+   */
+  runFrame(maxCycles = 2 * FRAME_CYCLES) {
+    const start = this.cpu.cycles;
+    this.frameSync = false;
+    return this.execute(maxCycles, true) - start;
   }
 
   setJoystick(player, x, y) {
