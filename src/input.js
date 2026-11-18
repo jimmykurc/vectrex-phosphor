@@ -8,18 +8,31 @@
  *             d-pad = joystick, face buttons = buttons 1-4
  */
 
-const BUTTON_KEYS = { KeyA: 0, KeyS: 1, KeyD: 2, KeyF: 3, Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 };
+// Letters follow the keyboard layout (e.key), so A is the key labelled A on
+// AZERTY as well as QWERTY; digits use the physical row (e.code), since they
+// need Shift on AZERTY.
+const LETTER_BUTTONS = { a: 0, s: 1, d: 2, f: 3 };
+const DIGIT_BUTTONS = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 };
 const ARROWS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 const DEADZONE = 0.15;
 
+/** Arrow code, button index (0-3) or undefined for a key event. */
+export function keyAction(e) {
+  if (ARROWS.has(e.code)) return e.code;
+  if (e.code in DIGIT_BUTTONS) return DIGIT_BUTTONS[e.code];
+  const letter = (e.key || '').toLowerCase();
+  return letter in LETTER_BUTTONS ? LETTER_BUTTONS[letter] : undefined;
+}
+
 export class Input {
   constructor(target = window) {
-    this.keys = new Set();
+    this.keys = new Map(); // physical key (e.code) -> arrow code or button index
     this.pads = 0;
     target.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (ARROWS.has(e.code) || e.code in BUTTON_KEYS) {
-        this.keys.add(e.code);
+      const action = keyAction(e);
+      if (action !== undefined) {
+        this.keys.set(e.code, action);
         e.preventDefault();
       }
     });
@@ -31,11 +44,13 @@ export class Input {
   poll(machine) {
     const k = this.keys;
     let x = [0, 0], y = [0, 0], buttons = 0;
-    if (k.has('ArrowLeft')) x[0] -= 1;
-    if (k.has('ArrowRight')) x[0] += 1;
-    if (k.has('ArrowUp')) y[0] += 1;
-    if (k.has('ArrowDown')) y[0] -= 1;
-    for (const code of k) if (code in BUTTON_KEYS) buttons |= 1 << BUTTON_KEYS[code];
+    for (const a of k.values()) {
+      if (a === 'ArrowLeft') x[0] -= 1;
+      else if (a === 'ArrowRight') x[0] += 1;
+      else if (a === 'ArrowUp') y[0] += 1;
+      else if (a === 'ArrowDown') y[0] -= 1;
+      else buttons |= 1 << a;
+    }
 
     let pads = 0;
     const list = navigator.getGamepads ? navigator.getGamepads() : [];

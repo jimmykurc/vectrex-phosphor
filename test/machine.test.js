@@ -152,3 +152,18 @@ describe('Vectrex machine running the built-in demo', () => {
     assert.equal(m.psg.regs[8], 0x10);
   });
 });
+
+import { keyAction } from '../src/input.js';
+
+describe('keyboard mapping', () => {
+  test('letters follow the layout: A is button 1 on AZERTY and QWERTY', () => {
+    assert.equal(keyAction({ code: 'KeyA', key: 'a' }), 0); // QWERTY
+    assert.equal(keyAction({ code: 'KeyQ', key: 'a' }), 0); // AZERTY: A sits on the Q key
+    assert.equal(keyAction({ code: 'KeyA', key: 'q' }), undefined);
+    assert.equal(keyAction({ code: 'KeyF', key: 'F' }), 3);
+  });
+  test('digits and arrows use physical keys', () => {
+    assert.equal(keyAction({ code: 'Digit2', key: 'é' }), 1);
+    assert.equal(keyAction({ code: 'ArrowLeft', key: 'ArrowLeft' }), 'ArrowLeft');
+  });
+});
