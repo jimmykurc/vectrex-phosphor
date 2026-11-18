@@ -93,17 +93,55 @@ describe('Vectrex machine running the built-in demo', () => {
     assert.ok(frames >= 99 && frames <= 101, `${frames} frames`);
   });
 
-  test('controller button 1 (read through the PSG) reverses the spin', () => {
-    const { symbols } = buildDemo();
-    const spin = symbols.SPIN & 0x3ff;
+  const ramOf = (name) => buildDemo().symbols[name] & 0x3ff;
+  const s8 = (v) => (v << 24) >> 24;
+  const frames = (m, n) => { for (let i = 0; i < n; i++) m.runFrame(); };
+
+  test('controller button 1 (read through the PSG) starts the game', () => {
+    const gmode = ramOf('GMODE');
     const m = boot();
-    m.run(FRAME_CYCLES * 3);
-    assert.equal(m.ram[spin], 2);
+    frames(m, 5);
+    assert.equal(m.ram[gmode], 0);
     m.setButtons(0x01);
-    m.run(FRAME_CYCLES * 2);
+    frames(m, 2);
     m.setButtons(0);
-    m.run(FRAME_CYCLES * 2);
-    assert.equal(m.ram[spin], 0xfe);
+    frames(m, 1);
+    assert.equal(m.ram[gmode], 1);
+  });
+
+  test('the joystick (read through the comparator) steers the ship', () => {
+    const shipx = ramOf('SHIPX');
+    const m = boot();
+    frames(m, 3);
+    m.setButtons(0x01); frames(m, 2); m.setButtons(0);
+    m.setJoystick(0, 255, 128);
+    frames(m, 10);
+    assert.ok(s8(m.ram[shipx]) > 20, `right: ${s8(m.ram[shipx])}`);
+    m.setJoystick(0, 0, 128);
+    frames(m, 30);
+    assert.ok(s8(m.ram[shipx]) < -20, `left: ${s8(m.ram[shipx])}`);
+  });
+
+  test('a full game: shots score, the falling cube ends it, then back to the title', () => {
+    const [gmode, score, hiscore, cx, shipx] = ['GMODE', 'SCORE', 'HISCORE', 'CX', 'SHIPX'].map(ramOf);
+    const m = boot();
+    frames(m, 3);
+    m.setButtons(0x01); frames(m, 2); m.setButtons(0);
+    for (let f = 0; f < 600; f++) {
+      const dx = s8(m.ram[cx]) - s8(m.ram[shipx]);
+      m.setJoystick(0, dx > 3 ? 255 : dx < -3 ? 0 : 128, 128);
+      m.setButtons(f & 1);
+      m.runFrame();
+    }
+    assert.ok(m.ram[score] >= 3, `score ${m.ram[score]}`);
+    m.setButtons(0);
+    m.setJoystick(0, 128, 128);
+    for (let f = 0; f < 3000 && m.ram[gmode] === 1; f++) m.runFrame();
+    assert.equal(m.ram[gmode], 2);
+    assert.equal(m.ram[hiscore], m.ram[score]);
+    frames(m, 160);
+    assert.equal(m.ram[gmode], 0);
+    assert.equal(m.cpu.illegal, 0);
   });
 
   test('music writes reach the PSG', () => {

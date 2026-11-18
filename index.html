@@ -71,13 +71,13 @@
           <tr><td><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd></td><td>Buttons 1 – 4</td></tr>
           <tr><td>Gamepad</td><td>Analog stick + face buttons<span id="pads"></span></td></tr>
         </table>
-        <p class="hint" id="demo-help">Demo: <kbd>A</kbd> reverses the spin, hold <kbd>S</kbd> to spin faster, <kbd>D</kbd> toggles the music.</p>
+        <p class="hint" id="demo-help">Demo game: press <kbd>A</kbd> to start, <kbd>←</kbd> <kbd>→</kbd> move the ship, <kbd>A</kbd> fires at the falling cube before it lands. <kbd>D</kbd> toggles the music.</p>
       </div>
 
       <div class="group about">
         <h2>Under the hood</h2>
         <p>A cycle-counted <strong>Motorola 6809</strong>, a <strong>VIA 6522</strong> and the analog vector board — DAC, sample-and-hold mux, integrators, ZERO, BLANK and RAMP — modelled cycle by cycle. The beam is drawn into a WebGL phosphor buffer with persistence and bloom; the <strong>AY-3-8912</strong> plays through an AudioWorklet.</p>
-        <p>The demo is an original 6809 program assembled by a small assembler in this repo, so it runs without any BIOS. No ROMs are included.</p>
+        <p>The demo game is an original 6809 program assembled by a small assembler in this repo, so it runs without any BIOS. No ROMs are included.</p>
       </div>
     </aside>
   </main>

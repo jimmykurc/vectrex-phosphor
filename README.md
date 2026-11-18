@@ -105,19 +105,24 @@ tools/
 test/                      node --test suites
 ```
 
-## The built-in demo
+## The built-in demo game
 
 `demo/demo.asm` is an original program (MIT) that sits in the system ROM slot
 and programs the VIA directly — no BIOS routines. Each 50 Hz frame it rotates and
 projects a cube with signed 8×8 multiplies and lookup tables (sine, perspective),
-builds a vector list on the fly, draws an orbiting ring of dots, prints
-wobbling text with its own stroke font and plays a PSG arpeggio, all within the
-30 000-cycle frame budget. It reads the controller buttons through the PSG:
+builds a vector list on the fly, prints text with its own stroke font and plays
+a PSG arpeggio, all within the 30 000-cycle frame budget.
+
+The title screen turns into a small shooting game: the spinning cube drifts
+down towards your ship; hit it before it lands. Each hit scores a point and
+the next cube comes faster. Buttons are read through the PSG, the joystick
+through the DAC comparator, like on the real machine.
 
 | Key | Effect |
 | --- | --- |
-| <kbd>A</kbd> (button 1) | reverse the spin |
-| <kbd>S</kbd> (button 2) | spin faster while held |
+| <kbd>A</kbd> or <kbd>F</kbd> (button 1 / 4) | start the game, then fire |
+| <kbd>←</kbd> <kbd>→</kbd> (joystick) | move the ship |
+| <kbd>S</kbd> (button 2) | spin the cube faster while held |
 | <kbd>D</kbd> (button 3) | music on / off (click **Sound** first — browsers need a gesture) |
 
 Rebuild it after editing: `node tools/build-demo.js`.

@@ -80,6 +80,26 @@ tscale     RMB 1
 twob       RMB 1
 proj       RMB 16             ; 8 projected vertices: (y, x)
 vlist      RMB 52             ; cube vector list built every frame
+btnnew     RMB 1              ; buttons pressed this frame
+joyx       RMB 1              ; joystick X: -1, 0 or +1
+gmode      RMB 1              ; 0 = title, 1 = playing, 2 = game over
+gotimer    RMB 1
+cx         RMB 1              ; cube centre (y, x) and scale
+cy         RMB 1
+cscale     RMB 1
+cdx        RMB 1              ; cube horizontal speed
+dspeed     RMB 1              ; frames per descent step
+dtimer     RMB 1
+shipx      RMB 1
+bact       RMB 1              ; shot in flight
+bx         RMB 1
+by         RMB 1
+score      RMB 1
+hiscore    RMB 1
+seed       RMB 1
+sfxvol     RMB 1
+sfxper     RMB 1
+scorestr   RMB 8              ; 3 glyph pointers + 0
 
 ; ---------------------------------------------------------------- ROM ----
            ORG $E000
@@ -107,6 +127,10 @@ reset:
            bne  .clr
            lda  #2
            sta  spin
+           lda  #CUBE_SCALE
+           sta  cscale
+           lda  #$5A
+           sta  seed
            jsr  psg_init
            ldd  #FRAME_T
            stb  VIA_T2CL
@@ -121,12 +145,39 @@ main:
            sta  VIA_T2CH
            inc  frame
            jsr  read_buttons
+           jsr  read_joy
+           jsr  rnd
            jsr  update
            jsr  music
+           lda  gmode
+           beq  title
+           cmpa #1
+           beq  play
+; game over: the cube stays where it landed, then back to the title
+           jsr  sfx
+           jsr  draw_cube
+           jsr  draw_gameover
+           dec  gotimer
+           bne  main
+           jsr  to_title
+           bra  main
+title:
            jsr  draw_cube
            jsr  draw_ring
            jsr  draw_texts
+           lda  btnnew
+           bita #$09           ; button 1 or 4: start a game
+           beq  main
+           jsr  start_game
            bra  main
+play:
+           jsr  game_update
+           jsr  sfx
+           jsr  draw_cube
+           jsr  draw_ship
+           jsr  draw_shot
+           jsr  draw_hud
+           jmp  main
 
 ; ----------------------------------------------------- beam primitives ----
 
@@ -356,7 +407,12 @@ draw_cube:
            lda  #$7F
            jsr  intensity
            jsr  zero_ref
-           lda  #CUBE_SCALE
+           lda  #MOVE_SCALE
+           sta  VIA_T1CL
+           lda  cy             ; move to the cube centre (0,0 on the title)
+           ldb  cx
+           jsr  moveto
+           lda  cscale
            sta  VIA_T1CL
            ldu  #cube_path
            ldy  #vlist
@@ -446,7 +502,7 @@ draw_texts:
            lda  #$46
            jsr  intensity
            ldu  #sub_str
-           lda  #-66
+           lda  #-52
            sta  tx
            lda  #-118
            sta  ty
@@ -545,12 +601,10 @@ read_buttons:
            lda  btnprev
            coma
            anda btn            ; newly pressed buttons
+           sta  btnnew
            ldb  btn
            stb  btnprev
-           bita #$01           ; button 1: reverse the spin
-           beq  .n1
-           neg  spin
-.n1        bita #$04           ; button 3: music on/off
+           bita #$04           ; button 3: music on/off
            beq  .n3
            com  mute
 .n3        rts
@@ -606,6 +660,312 @@ music:
            jsr  psg_write      ; retrigger envelope: decay
 .done      rts
 
+; Joystick 1 X through the comparator: mux channel 0 against the DAC.
+; PB5 is high when the pot is above the DAC value.
+read_joy:
+           clr  joyx
+           lda  #$40
+           sta  VIA_ORA
+           clr  VIA_ORB        ; mux on, channel 0: player 1 X
+           lda  VIA_ORB
+           bita #$20
+           beq  .nr
+           inc  joyx           ; pushed right
+.nr        lda  #$C0
+           sta  VIA_ORA
+           lda  VIA_ORB
+           bita #$20
+           bne  .nl
+           dec  joyx           ; pushed left
+.nl        lda  #$01
+           sta  VIA_ORB        ; mux off
+           rts
+
+; 8-bit Galois LFSR: A = next pseudo-random byte
+rnd:
+           lda  seed
+           lsla
+           bcc  .k
+           eora #$1D
+.k         sta  seed
+           rts
+
+; Noise burst on PSG channel C: sfxvol decays one step per frame.
+sfx:
+           lda  #7
+           ldb  #$1C           ; tones A and B, noise on C
+           jsr  psg_write
+           lda  #6
+           ldb  sfxper
+           jsr  psg_write
+           ldb  sfxvol
+           tst  mute
+           beq  .v
+           clrb
+.v         lda  #10
+           jsr  psg_write
+           tst  sfxvol
+           beq  .x
+           dec  sfxvol
+.x         rts
+
+; ---------------------------------------------------------------- game ----
+GAME_SCALE EQU $28            ; cube scale while playing
+SHIP_Y     EQU -100
+HIT        EQU 24             ; hit box half size
+
+start_game:
+           lda  #1
+           sta  gmode
+           clr  score
+           clr  bact
+           clr  shipx
+           lda  #GAME_SCALE
+           sta  cscale
+           jmp  spawn_cube
+
+to_title:
+           clr  gmode
+           clr  cx
+           clr  cy
+           lda  #CUBE_SCALE
+           sta  cscale
+           rts
+
+; A new cube at the top; faster as the score grows.
+spawn_cube:
+           jsr  rnd
+           anda #$7F
+           suba #64
+           sta  cx
+           lda  #90
+           sta  cy
+           lda  score          ; |cdx| = 1 + score/6, at most 4
+           clrb
+.d6        cmpa #6
+           blo  .s
+           suba #6
+           incb
+           bra  .d6
+.s         incb
+           cmpb #4
+           bls  .s2
+           ldb  #4
+.s2        lda  seed
+           bpl  .s3
+           negb
+.s3        stb  cdx
+           lda  score          ; descent: one step every 3 - score/8 frames
+           lsra
+           lsra
+           lsra
+           nega
+           adda #3
+           bgt  .s4
+           lda  #1
+.s4        sta  dspeed
+           sta  dtimer
+           rts
+
+game_over:
+           lda  #2
+           sta  gmode
+           lda  #150
+           sta  gotimer
+           clr  bact
+           lda  #15
+           sta  sfxvol
+           lda  #31
+           sta  sfxper
+           lda  score
+           cmpa hiscore
+           bls  .x
+           sta  hiscore
+.x         rts
+
+game_update:
+           lda  joyx           ; ship: 3 units per frame
+           beq  .fire
+           bmi  .left
+           lda  shipx
+           adda #3
+           cmpa #108
+           ble  .sx
+           lda  #108
+           bra  .sx
+.left      lda  shipx
+           suba #3
+           cmpa #-108
+           bge  .sx
+           lda  #-108
+.sx        sta  shipx
+.fire      lda  btnnew         ; button 1 or 4 fires
+           bita #$09
+           beq  .shot
+           tst  bact
+           bne  .shot
+           inc  bact
+           lda  shipx
+           sta  bx
+           lda  #SHIP_Y+14
+           sta  by
+           lda  #6
+           sta  sfxvol
+           lda  #4
+           sta  sfxper
+.shot      tst  bact
+           beq  .cube
+           lda  by
+           adda #6
+           cmpa #116
+           blt  .sy
+           clr  bact
+.sy        sta  by
+.cube      lda  cx             ; drift and bounce
+           adda cdx
+           sta  cx
+           cmpa #100
+           ble  .b1
+           tst  cdx
+           bmi  .b1
+           neg  cdx
+.b1        cmpa #-100
+           bge  .b2
+           tst  cdx
+           bpl  .b2
+           neg  cdx
+.b2        dec  dtimer         ; descend
+           bne  .hit
+           lda  dspeed
+           sta  dtimer
+           dec  cy
+           lda  cy
+           cmpa #SHIP_Y+16
+           bgt  .hit
+           jmp  game_over
+.hit       tst  bact
+           beq  .done
+           lda  bx
+           suba cx
+           bvs  .done
+           bpl  .ax
+           nega
+.ax        cmpa #HIT
+           bhs  .done
+           lda  by
+           suba cy
+           bvs  .done
+           bpl  .ay
+           nega
+.ay        cmpa #HIT
+           bhs  .done
+           clr  bact           ; hit!
+           lda  score
+           cmpa #255
+           beq  .sc
+           inc  score
+.sc        lda  #15
+           sta  sfxvol
+           lda  #12
+           sta  sfxper
+           jmp  spawn_cube
+.done      rts
+
+draw_ship:
+           lda  #$7F
+           jsr  intensity
+           jsr  zero_ref
+           lda  #MOVE_SCALE
+           sta  VIA_T1CL
+           lda  #SHIP_Y
+           ldb  shipx
+           subb #8
+           jsr  moveto
+           ldx  #ship_v
+           jmp  draw_list
+
+draw_shot:
+           tst  bact
+           beq  .x
+           jsr  zero_ref
+           lda  #MOVE_SCALE
+           sta  VIA_T1CL
+           lda  by
+           ldb  bx
+           jsr  moveto
+           ldx  #shot_v
+           jmp  draw_list
+.x         rts
+
+; Fill scorestr with the 3 digits of A.
+make_score:
+           ldy  #scorestr
+           clrb
+.h         cmpa #100
+           blo  .hd
+           suba #100
+           incb
+           bra  .h
+.hd        bsr  put_digit
+           clrb
+.t         cmpa #10
+           blo  .td
+           suba #10
+           incb
+           bra  .t
+.td        bsr  put_digit
+           tfr  a,b
+           bsr  put_digit
+           ldx  #0
+           stx  ,y
+           rts
+put_digit:
+           ldx  #digits
+           lslb
+           ldx  b,x
+           stx  ,y++
+           rts
+
+draw_hud:
+           lda  score
+           jsr  make_score
+           lda  #$50
+           jsr  intensity
+           ldu  #scorestr
+           lda  #-112
+           sta  tx
+           lda  #104
+           sta  ty
+           lda  #20
+           sta  tscale
+           clr  twob
+           jmp  draw_text
+
+draw_gameover:
+           lda  bright
+           jsr  intensity
+           ldu  #over_str
+           lda  #-90
+           sta  tx
+           lda  #24
+           sta  ty
+           lda  #32
+           sta  tscale
+           clr  twob
+           jsr  draw_text
+           lda  score
+           jsr  make_score
+           lda  #$60
+           jsr  intensity
+           ldu  #scorestr
+           lda  #-30
+           sta  tx
+           lda  #-24
+           sta  ty
+           lda  #32
+           sta  tscale
+           jmp  draw_text
+
 ; ---------------------------------------------------------------- data ----
 notes:     FDB 213,179,142,120,107,120,142,160
 
@@ -616,7 +976,13 @@ cube_path: FCB MV,0, DR,1, DR,2, DR,3, DR,0, DR,4, DR,5, DR,6, DR,7, DR,4
            FCB MV,5, DR,1, MV,2, DR,6, MV,7, DR,3, ENDL
 
 title_str: FDB g_P,g_H,g_O,g_S,g_P,g_H,g_O,g_R,0
-sub_str:   FDB g_6,g_8,g_0,g_9,g_SP,g_D,g_E,g_M,g_O,0
+sub_str:   FDB g_P,g_R,g_E,g_S,g_S,g_SP,g_A,0
+over_str:  FDB g_G,g_A,g_M,g_E,g_SP,g_O,g_V,g_E,g_R,0
+digits:    FDB g_0,g_1,g_2,g_3,g_4,g_5,g_6,g_7,g_8,g_9
+
+; Ship (a chevron, bottom-left origin) and shot, at MOVE_SCALE
+ship_v:    FCB DR,14,8, DR,-14,8, DR,4,-8, DR,-4,-8, ENDL
+shot_v:    FCB DR,8,0, ENDL
 
 ; Squared stroke font on a 4x6 grid, origin at the bottom-left corner.
 ; Each entry: op, dy, dx (relative moves). The last move of every glyph
@@ -634,6 +1000,15 @@ g_D:  FCB DR,6*U,0, DR,0,3*U, DR,-U,U, DR,-4*U,0, DR,-U,-U, DR,0,-3*U, MV,0,5*U,
 g_E:  FCB MV,0,4*U, DR,0,-4*U, DR,6*U,0, DR,0,4*U, MV,-3*U,-4*U, DR,0,3*U, MV,-3*U,2*U, ENDL
 g_M:  FCB DR,6*U,0, DR,-3*U,2*U, DR,3*U,2*U, DR,-6*U,0, MV,0,U, ENDL
 g_SP: FCB MV,0,5*U, ENDL
+g_A:  FCB DR,6*U,0, DR,0,4*U, DR,-6*U,0, MV,3*U,0, DR,0,-4*U, MV,-3*U,5*U, ENDL
+g_G:  FCB MV,6*U,4*U, DR,0,-4*U, DR,-6*U,0, DR,0,4*U, DR,3*U,0, DR,0,-2*U, MV,-3*U,3*U, ENDL
+g_V:  FCB MV,6*U,0, DR,-6*U,2*U, DR,6*U,2*U, MV,-6*U,U, ENDL
+g_1:  FCB MV,0,2*U, DR,6*U,0, MV,-6*U,3*U, ENDL
+g_2:  FCB MV,6*U,0, DR,0,4*U, DR,-3*U,0, DR,0,-4*U, DR,-3*U,0, DR,0,4*U, MV,0,U, ENDL
+g_3:  FCB DR,0,4*U, DR,6*U,0, DR,0,-4*U, MV,-3*U,U, DR,0,3*U, MV,-3*U,U, ENDL
+g_4:  FCB MV,6*U,0, DR,-3*U,0, DR,0,4*U, MV,3*U,0, DR,-6*U,0, MV,0,U, ENDL
+g_5:  FCB DR,0,4*U, DR,3*U,0, DR,0,-4*U, DR,3*U,0, DR,0,4*U, MV,-6*U,U, ENDL
+g_7:  FCB MV,6*U,0, DR,0,4*U, DR,-6*U,0, MV,0,U, ENDL
 
            INCLUDE "tables.inc"
 

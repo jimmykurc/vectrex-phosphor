@@ -39,7 +39,7 @@ function bootDemo() {
   machine.reset();
   renderer.clear();
   $('demo-help').hidden = false;
-  setStatus('Built-in demo running · no BIOS needed');
+  setStatus('Built-in demo game · press A to play · no BIOS needed');
 }
 
 function bootBios() {
