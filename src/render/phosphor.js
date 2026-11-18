@@ -77,6 +77,7 @@ uniform sampler2D u_core;
 uniform sampler2D u_glow1;
 uniform sampler2D u_glow2;
 uniform float u_glow;
+uniform float u_dither;
 in vec2 v_uv;
 out vec4 o;
 void main() {
@@ -93,7 +94,7 @@ void main() {
   col = col * (0.75 + 0.25 * vig) + vec3(0.008, 0.011, 0.016) * vig;
   // tiny ordered noise to avoid banding in the glow
   float n = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
-  o = vec4(col + (n - 0.5) / 255.0, 1.0);
+  o = vec4(col + (n - 0.5) * u_dither / 255.0, 1.0);
 }`;
 
 function compile(gl, vs, fs) {
@@ -136,6 +137,7 @@ class GLRenderer {
     this.float = !!gl.getExtension('EXT_color_buffer_float');
     this.persistence = 0.3;
     this.glow = 1.0;
+    this.dither = 1.0;
     this.line = compile(gl, VS_LINE, FS_LINE);
     this.solid = compile(gl, VS_FULL, FS_SOLID);
     this.blur = compile(gl, VS_FULL, FS_BLUR);
@@ -281,6 +283,7 @@ class GLRenderer {
       gl.uniform1i(this.comp.u.u_glow1, 1);
       gl.uniform1i(this.comp.u.u_glow2, 2);
       gl.uniform1f(this.comp.u.u_glow, this.glow);
+      gl.uniform1f(this.comp.u.u_dither, this.dither);
       gl.activeTexture(gl.TEXTURE0);
     });
   }

@@ -402,7 +402,7 @@ draw_ring:
            sta  rcos
            asra
            asra
-           adda #$50           ; dots in front are brighter
+           adda #$60           ; dots in front are brighter
            jsr  intensity
            lda  rcos           ; y = -cos/8 (front of the ring is lower)
            asra

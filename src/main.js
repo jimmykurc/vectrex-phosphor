@@ -99,6 +99,17 @@ let budget = 0;
 let frames = 0, emuFrames = 0, emuCycles = 0, fpsT = last;
 const fpsEl = $('fps');
 
+let paused = false;
+
+/** Run one display frame of the machine and feed its beam segments to the renderer. */
+function emulateFrame() {
+  const used = machine.runFrame();
+  emuCycles += used;
+  renderer.addFrame(machine.vector.segments, machine.vector.count);
+  machine.vector.clear();
+  return used;
+}
+
 function loop() {
   const now = performance.now();
   const dt = Math.max(0, Math.min(100, now - last));
@@ -107,12 +118,8 @@ function loop() {
   input.poll(machine);
 
   let ran = 0;
-  while (budget > 0 && ran < 3) {
-    const used = machine.runFrame();
-    budget -= used;
-    emuCycles += used;
-    renderer.addFrame(machine.vector.segments, machine.vector.count);
-    machine.vector.clear();
+  while (!paused && budget > 0 && ran < 3) {
+    budget -= emulateFrame();
     ran++;
   }
   if (budget > 0) budget = 0; // too slow: drop time rather than spiral
@@ -178,7 +185,13 @@ window.addEventListener('drop', (e) => {
 });
 
 // Expose for debugging from the console
-window.phosphor = { machine, renderer, audio };
+// Exposed for debugging and for tools/capture-gif.js (deterministic frame stepping)
+window.phosphor = {
+  machine, renderer, audio,
+  pause() { paused = true; },
+  resume() { paused = false; budget = 0; },
+  step(n = 1) { for (let i = 0; i < n; i++) emulateFrame(); renderer.present(); },
+};
 
 bootDemo();
 if (renderer.kind !== 'WebGL2 (half-float)') console.info('Renderer:', renderer.kind);
